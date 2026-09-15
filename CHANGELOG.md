@@ -296,3 +296,39 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
   Verified after the upgrade: `npm run lint` (7 files, zero errors),
   `npm test` (35/35), `npm run types`, `npm run build`,
   `npm run prettier:check`.
+
+- upgrade `@types/wcwidth` from 1.0.0 to 1.0.2
+
+  The devDependency moves from `^1.0.0` to `^1.0.2` (registry latest).
+  The runtime `wcwidth` package still ships no types of its own, so the
+  `@types` package remains required. No other packages needed updating.
+
+  The new declaration is a drop-in for this repo: it still declares
+  `declare function wcwidth(input: string): number` but now uses a
+  CommonJS-style `export =` instead of the 1.0.0 declaration style,
+  which resolves identically through the `esModuleInterop`-enabled
+  default import in `src/tags.ts` (`import wcwidth from 'wcwidth'`,
+  used for double-width character accounting in `diff`).
+
+  Verified after the upgrade: `npm test` (35/35), `npm run types`
+  (declaration emit), `npm run lint`, `npm run build`, and the
+  prettier check.
+
+- upgrade `@types/css` from 0.0.33 to 0.0.38
+
+  The devDependency moves from `^0.0.33` to `^0.0.38` (registry
+  latest; five DefinitelyTyped releases, last published Sep 2024).
+  The runtime `css` package still ships no types of its own, so the
+  `@types` package remains required. No other packages needed
+  updating.
+
+  The API this library consumes — `parse()` returning a `Stylesheet`
+  with a `stylesheet.rules` tree of `Rule` / `Declaration` nodes, used
+  by `getColorMap` to extract token colors from the vendored CodeMirror
+  theme CSS — is unchanged in shape, so no code changes were needed.
+  The intervening releases are DefinitelyTyped maintenance updates
+  (strictness/lint conformance of the declaration file itself).
+
+  Verified after the upgrade: `npm test` (35/35), `npm run types`
+  (declaration emit), `npm run lint`, `npm run build`, and the
+  prettier check.
