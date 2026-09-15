@@ -332,3 +332,40 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
   Verified after the upgrade: `npm test` (35/35), `npm run types`
   (declaration emit), `npm run lint`, `npm run build`, and the
   prettier check.
+
+- upgrade the `@babel/*` toolchain from 7.18–7.19 to Babel 8
+
+  All four build devDependencies move from their 7.x versions to the
+  Babel 8 line (registry latest): `@babel/cli` `^7.18.10` →
+  `^8.0.5`, `@babel/core` `^7.19.0` → `^8.0.5`, `@babel/preset-env`
+  `^7.19.0` → `^8.0.5`, `@babel/preset-typescript` `^7.18.6` →
+  `^8.0.1`. The four are a locked suite (they all peer-depend on the
+  same `@babel/core` major), so they move together. No other packages
+  needed updating: the babel config files are plain JSON (unaffected
+  by Babel 8's config-loading changes) and nothing else in the repo
+  consumes `@babel/core` programmatically.
+
+  The build configs are carried over verbatim —
+  `babel.esm.config.json` (`@babel/preset-typescript` only, test/d.ts
+  files ignored) and `babel.cjs.config.json` (`@babel/preset-env` with
+  `modules: "commonjs"` + `targets: "maintained node versions"`, plus
+  `@babel/preset-typescript`) both work unmodified on Babel 8; the
+  `modules: commonjs` option and the CJS dynamic-import lowering
+  (`import()` → `Promise`-wrapped `require` with
+  `_interopRequireWildcard`, which the CJS output relies on to resolve
+  `@codemirror/legacy-modes/mode/*` and the `?raw` theme imports)
+  behave exactly as under Babel 7.
+
+  Verified after the upgrade:
+
+  - `npm run build` compiles both targets (`Successfully compiled 5
+files with Babel` for esm and cjs) plus the declaration emit and
+    theme assets; the ESM output still loads (`modeInfo` registry:
+    139 entries) and the CJS output keeps the same require-interop
+    structure as before.
+  - The `caniuse-lite is outdated` browserslist warning that the old
+    `@babel/preset-env@7.19.0` stack printed on every CJS build is
+    gone (Babel 8 ships an up-to-date compat-data/browserslist
+    dependency set).
+  - `npm test` (35/35), `npm run lint`, `npm run prettier:check` — no
+    source changes were required anywhere.
