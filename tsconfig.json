@@ -1,11 +1,12 @@
 {
   "compilerOptions": {
     "outDir": "lib/types",
+    "rootDir": "./src",
     "declaration": true,
     "emitDeclarationOnly": true,
     "declarationMap": true,
     "target": "esnext",
-    "moduleResolution": "Node",
+    "moduleResolution": "bundler",
     "module": "esnext",
     "resolveJsonModule": true,
     "useDefineForClassFields": true,

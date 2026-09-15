@@ -240,3 +240,59 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
   chain the pre-commit hook runs — plus a clean prettier check. The
   first commit made after this change goes through the husky 9 hook
   path end-to-end.
+
+- upgrade `eslint` from 8.23.0 to 10.10.0 and the lint toolchain with it
+
+  ESLint 10 drops eslintrc entirely (flat config only), and the whole
+  lint stack moves with it. This mirrors the toolchain the
+  motion-canvas monorepo already standardized on (see its
+  `eslint.config.mjs` and AGENTS.md "Companion pins"), so the two
+  repos now lint the same way:
+
+  - `eslint` `^8.23.0` → `^10.10.0`
+  - `@typescript-eslint/eslint-plugin` and `-parser` `^5.36.1` →
+    `^8.70.0` (v5 does not support eslint ≥9; v8 declares the peer
+    range `^8.57.0 || ^9.0.0 || ^10.0.0`)
+  - `eslint-plugin-tsdoc` `^0.2.16` → `^0.5.2` (0.2.x used the old
+    eslintrc `RuleTester`/utils and does not work under flat config;
+    0.5.x nests its own private `@typescript-eslint/utils@8.56.1` +
+    `typescript@5.9.3`, which is isolated and harmless)
+  - `@eslint/js@^10.0.1` and `globals@^17.12.0` are added as devDeps —
+    flat config references `js.configs.recommended` and the
+    browser/es2021 globals explicitly instead of the eslintrc `env`
+    block
+  - `typescript` `^4.6.4` → `~6.0.3`: typescript-eslint 8.70 declares
+    `typescript >=4.8.4 <6.1.0` as its peer, and the repo's resolved
+    4.8.2 fell below that floor. 6.0.3 is the newest release inside
+    the supported range (7.x, the native-compiler line, is not).
+
+  Config migration (`.eslintrc.cjs` deleted, `eslint.config.mjs`
+  added):
+
+  - The rule set is intentionally unchanged: `js.configs.recommended`
+    replaces `eslint:recommended`, `tsPlugin.configs['flat/recommended']`
+    replaces `plugin:@typescript-eslint/recommended`, and the two
+    custom rules (`tsdoc/syntax: error`,
+    `no-irregular-whitespace: off`) carry over. Browser + es2021
+    globals move from the eslintrc `env` block into
+    `languageOptions.globals`. All 7 files under `src/` lint with zero
+    errors under the new stack — no code changes were needed.
+  - The `lint` script (`eslint ./src/`) is unchanged; flat config is
+    discovered from the repo root automatically.
+
+  TypeScript 6 fallout in `tsconfig.json` (surface by the
+  `npm run types` declaration build, exit code unchanged but errors
+  printed):
+
+  - `"moduleResolution": "Node"` (node10) is deprecated in TS 6
+    (TS5107) and removed in TS 7 — replaced with `"bundler"`, the
+    correct mode for a library that consumers always import through a
+    bundler and whose `?raw` imports only resolve in one anyway.
+  - TS 6 additionally requires an explicit `"rootDir"` when the common
+    source directory is `./src` (TS5011) — `"rootDir": "./src"` added.
+    The declaration output (`lib/types/*.d.ts` + maps) has an
+    unchanged layout.
+
+  Verified after the upgrade: `npm run lint` (7 files, zero errors),
+  `npm test` (35/35), `npm run types`, `npm run build`,
+  `npm run prettier:check`.
