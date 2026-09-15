@@ -239,7 +239,7 @@ function runMode(
     while (!stream.eol()) {
       const style = parser.token(stream, state);
       const normalized =
-        typeof style === 'string' ? styleAliases[style] ?? style : null;
+        typeof style === 'string' ? (styleAliases[style] ?? style) : null;
       callback(
         stream.current(),
         (normalized as StyleOption | null) ?? undefined,

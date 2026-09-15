@@ -182,3 +182,31 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
   `exports` map, while the `?raw` theme imports remain bundler-only
   (unchanged limitation — `ready()` still requires a bundler in the
   same way it did when the CSS came from the `codemirror` package).
+
+- upgrade `prettier` from 2.7.1 to 3.9.6
+
+  The devDependency moves from `^2.7.1` to `^3.9.6` (registry latest,
+  the same version the motion-canvas monorepo standardizes on). The
+  configured options (`singleQuote`, `printWidth: 80`,
+  `trailingComma: all`) carry over unchanged; `trailingComma` even
+  became the 3.x default. No companion packages needed updating — the
+  repo uses no prettier plugins and nothing else consumes its API.
+
+  The upgrade reformats exactly two files (everything else,
+  including `src/modes.ts` and the vendored `src/themes/*.css`
+  excluded via `.prettierignore`, is byte-identical):
+
+  - `index.html`: the HTML doctype is now emitted lowercase
+    (`<!DOCTYPE html>` → `<!doctype html>`), matching the HTML spec
+    and Prettier 3's normalization. No behavioral difference.
+  - `src/tags.ts` (one line): Prettier ≥3.6 requires parentheses
+    around a `??` expression inside a ternary branch
+    (`styleAliases[style] ?? style` →
+    `(styleAliases[style] ?? style)`) — the new
+    ambiguous-nullish-coalescing disambiguation. Pure formatting; the
+    emitted code is identical.
+
+  Verified after the upgrade: `npm test` (35/35), `npm run lint`,
+  `npm run types`, `npm run build`, and the prettier check.
+  The `husky` pre-commit hook chain is unaffected (it invokes
+  `prettier --check`, which passes).
