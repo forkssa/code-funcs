@@ -60,3 +60,125 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
     repo's own `tsc` run only compiles `src/index.ts` with
     `skipLibCheck`, so the old TypeScript remains functional for the
     declaration build and lint.
+
+- migrate the `codemirror` dependency (5.65.12) to the CodeMirror 6
+  ecosystem
+
+  The runtime dependency `codemirror` moves from `^5.65.12` to the
+  CodeMirror 6 packages this library actually uses. CodeMirror 6 is a
+  ground-up rewrite published under the same npm name, and the new
+  `codemirror` package (6.0.2) is only the editor bundle
+  (`basicSetup` + re-exports of `@codemirror/{view,state,language,…}`).
+  It contains none of the three CodeMirror 5 pieces this headless
+  highlighting library was built on — `addon/runmode/runmode.node`,
+  the `mode/*` parser files with `mode/meta`, and the `lib/codemirror.css`
+  / `theme/*.css` files — so a plain `codemirror@latest` install cannot
+  satisfy the library at all. The upgrade therefore lands on the
+  CodeMirror 6 packages that provide those capabilities:
+
+  - `codemirror` (5.65.12) is **removed**, together with the dev-only
+    `@types/codemirror` (CodeMirror 6 packages ship their own types).
+    Keeping the unused editor bundle would drag `@codemirror/view`,
+    `autocomplete`, `commands`, `search` and `lint` into every
+    installation for no benefit.
+  - `@codemirror/language@^6.12.4` is added (runtime dependency). It
+    supplies the public `StringStream` and `StreamParser` types
+    (dual ESM/CJS builds, so the CJS output can still resolve it) and
+    is the CodeMirror 6 counterpart of the parts of CM5's core that
+    runmode depended on.
+  - `@codemirror/legacy-modes@^6.5.4` is added (runtime dependency).
+    This is the official CM5-mode preservation package: each mode is
+    the original CodeMirror 5 tokenizer source adapted into a
+    `StreamParser`, so token boundaries and CodeMirror 5 style strings
+    (`keyword`, `atom`, `number`, `def`, `variable`, `operator`,
+    `comment`, `string`, …) are preserved verbatim and all 35 tests
+    pass unchanged.
+
+  The fallout was fixed as follows:
+
+  - **Tokenizer port.** `CodeMirror.runMode` no longer exists in
+    CodeMirror 6. A faithful port now lives in `src/tags.ts` as the
+    private `runMode` helper, written directly against
+    `@codemirror/language`'s exported `StringStream` and the legacy
+    modes' `StreamParser` interface. It mirrors CM5's
+    `addon/runmode/runmode` loop exactly: text is split on
+    `/\r?\n|\r/`, parser state is carried across lines via
+    `startState(indentUnit)`/`blankLine(state, indentUnit)`, `\n` is
+    reported between lines with no style (which is what feeds the
+    line-position bookkeeping in `diff`), and every token is reported
+    as `(text, style)` with `stream.start` advanced after each token.
+    No legacy mode uses the CM5 `StringStream` features that the CM6
+    class dropped (`lookAhead`, `hideFirstChars`, `baseToken`), which
+    was verified before the port.
+  - **Language registry.** `codemirror/mode/meta` (`CodeMirror.modeInfo`,
+    157 entries) no longer exists. Its replacement is the new generated
+    `src/modes.ts`: the historical CM5 `modeInfo` table (from
+    `codemirror@5.65.21`, MIT) mapped onto `@codemirror/legacy-modes`
+    modules, with per-entry `{module, export}` resolution for
+    multi-export modules (`clike` → `c`/`cpp`/`java`/…, `css` →
+    `css`/`less`/`sCSS`/`gss`, `sql` → 9 dialects, `javascript` →
+    `javascript`/`json`/`jsonld`/`typescript`, `mllike`, `rpm`,
+    `haxe`, `mscgen`, `verilog`, `z80`, …). The `modeMap`/`collisions`
+    key derivation in `tags.ts` (aliases first, extensions as
+    fallback, collisions removed) is unchanged, so every existing
+    language key keeps its meaning; 139 of the 157 entries survive.
+    The generator lives at `workspace/src/gen-code-funcs-modes.js` in
+    the wrapper repository (regenerate with
+    `node workspace/src/gen-code-funcs-modes.js --repo ../code-funcs`).
+  - **Language coverage changes.** Fifteen CM5 modes have no
+    `@codemirror/legacy-modes` counterpart and are dropped from the
+    registry: `markdown`, `gfm`, `php`, `vue`, `django`, `haml`,
+    `twig`, `soy`, `slim`, `smarty`, `tornado`, `rst`,
+    `htmlembedded` (embedded JavaScript/Ruby/ASP.NET/JSP),
+    `haskell-literate` and the `null` plain-text pseudo-mode (which
+    had no alias/extension keys and was never reachable through
+    `modeMap`). Their CodeMirror 6 successors (`@codemirror/lang-*`)
+    are Lezer-based and emit tags rather than CodeMirror 5 style
+    strings, which this library's color pipeline cannot consume.
+    `HTML` remains but now resolves to the legacy `xml` module's
+    `html` parser, which highlights tags/attributes but no longer
+    colorizes embedded JavaScript/CSS (CM5's `htmlmixed` sub-mode
+    machinery is not part of legacy-modes). `jsx` maps to the legacy
+    `javascript` parser and `tsx` to its `typescript` parser; JSX/TSX
+    markup itself is no longer tokenized as embedded XML the way
+    CM5's `jsx` mode did it (plain TS/JS tokenization only).
+  - **Theme pipeline preserved via vendored CSS.** CodeMirror 6 has no
+    CSS theme files, so the entire theme feature (parse `{theme}`
+    option, `ready({themes})`, `.cm-s-<theme>` CSS parsing through the
+    `css` package) is kept alive by vendoring the CodeMirror 5 style
+    sheets into the repository: `lib/codemirror.css` becomes
+    `src/themes/codemirror.css` (the source of the `default` color
+    map) and all 65 `theme/*.css` files ship as `src/themes/<name>.css`
+    (nord, material-darker, dracula, … — every theme name the CM5
+    package ever provided). `getTheme` now imports
+    `./themes/${theme}.css?raw` from the library itself instead of
+    reaching into the `codemirror` package. The vendored files are
+    excluded from prettier (`.prettierignore`) so they stay verbatim,
+    and the `build` script gained an `assets` step that copies
+    `src/themes` into both `lib/esm/themes` and `lib/cjs/themes` so
+    the published package keeps working with bundler `?raw` imports.
+  - **Style-name normalization.** `@codemirror/legacy-modes` renamed
+    some CM5 token styles to CM6 tag names on a per-mode basis
+    (`string-2` → `string.special`, `variable-2` →
+    `variableName.special`, `variable-3`/`variable-2` →
+    `variableName.local` depending on the mode, `variable-3` →
+    `variableName.constant` in css). Since the `StyleOption` union and
+    the vendored theme CSS both speak CM5 class names, `runMode`
+    translates the four verified renames back
+    (`src/tags.ts` `styleAliases`; each entry was checked against the
+    corresponding `codemirror@5` mode source). Without this the
+    `/r/g` regexp test fell back to black instead of `#f50`.
+  - **Minor fix.** `ready()`'s error for an unknown language said
+    `language null not found` (it interpolated the wrong variable);
+    it now reports the requested language key.
+
+  Verified after the migration: `npm test` (35/35, unchanged
+  expectations), `npm run coverage` (86.79% statements — same profile
+  as before), `npm run lint`, `npm run types`, `npm run build`
+  (babel esm + cjs + declaration emit + theme assets), and the
+  prettier check. The CJS output keeps working the way it did before:
+  `@codemirror/language` and `@codemirror/legacy-modes` are dual
+  ESM/CJS, dynamic `import()`s of mode modules resolve through the
+  `exports` map, while the `?raw` theme imports remain bundler-only
+  (unchanged limitation — `ready()` still requires a bundler in the
+  same way it did when the CSS came from the `codemirror` package).

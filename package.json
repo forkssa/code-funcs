@@ -25,9 +25,10 @@
     "test": "vitest run",
     "test:watch": "vitest --ui",
     "dev": "vite",
-    "build": "rm -rf lib && npm run babel:esm && npm run babel:cjs && npm run types",
+    "build": "rm -rf lib && npm run babel:esm && npm run babel:cjs && npm run types && npm run assets",
     "babel:esm": "babel src --config-file ./babel.esm.config.json --extensions '.ts' --out-dir 'lib/esm'",
     "babel:cjs": "babel src --config-file ./babel.cjs.config.json --extensions '.ts' --out-dir 'lib/cjs'",
+    "assets": "cp -r src/themes lib/esm/themes && cp -r src/themes lib/cjs/themes",
     "types": "tsc",
     "preview": "vite preview",
     "prettier": "prettier --write .",
@@ -44,7 +45,6 @@
     "@babel/core": "^7.19.0",
     "@babel/preset-env": "^7.19.0",
     "@babel/preset-typescript": "^7.18.6",
-    "@types/codemirror": "^5.60.7",
     "@types/css": "^0.0.33",
     "@types/wcwidth": "^1.0.0",
     "@typescript-eslint/eslint-plugin": "^5.36.1",
@@ -65,7 +65,8 @@
     "trailingComma": "all"
   },
   "dependencies": {
-    "codemirror": "^5.65.12",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/legacy-modes": "^6.5.4",
     "css": "^3.0.0",
     "wcwidth": "^1.0.1"
   }

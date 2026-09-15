@@ -1,22 +1,12 @@
 import { CodeStyle, getFromCodeStyle, StyleOption } from './style';
 import wcwidth from 'wcwidth';
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import CodeMirror from 'codemirror/addon/runmode/runmode.node';
-import 'codemirror/mode/meta';
+import { modeInfo, Mode } from './modes';
+import { StreamParser, StringStream } from '@codemirror/language';
 import { Declaration, parse as parseCSS, Rule } from 'css';
 
 const modeMap = new Map<string, Mode>();
 const collisions = new Set<string>();
-interface Mode {
-  name: string;
-  mime: string;
-  mode: string;
-  mimes?: string[];
-  alias?: string[];
-  ext?: string[];
-}
-for (const mode of CodeMirror.modeInfo as Mode[]) {
+for (const mode of modeInfo) {
   const keys = new Set<string>();
   for (const key of mode.alias ?? []) {
     keys.add(key);
@@ -36,6 +26,18 @@ for (const mode of CodeMirror.modeInfo as Mode[]) {
   }
 }
 
+const parsers = new Map<Mode, StreamParser<unknown>>();
+
+async function loadParser(mode: Mode) {
+  let parser = parsers.get(mode);
+  if (parser == null) {
+    const module = await import(`@codemirror/legacy-modes/mode/${mode.module}`);
+    parser = module[mode.export] as StreamParser<unknown>;
+    parsers.set(mode, parser);
+  }
+  return parser;
+}
+
 const themes: Map<string, Map<string, string>> = new Map();
 
 interface ReadyOptions {
@@ -47,9 +49,9 @@ export async function ready(options?: ReadyOptions) {
   for (const lang of options?.langs ?? []) {
     const mode = modeMap.get(lang);
     if (mode == null) {
-      throw new Error(`language ${mode} not found`);
+      throw new Error(`language ${lang} not found`);
     }
-    await import(`codemirror/mode/${mode.mode}/${mode.mode}`);
+    await loadParser(mode);
   }
   themes.set('default', await getColorMap());
   for (const theme of options?.themes ?? []) {
@@ -150,9 +152,9 @@ async function getTheme(theme?: string) {
   if (theme == null) {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    return (await import(`codemirror/lib/codemirror.css?raw`)).default;
+    return (await import(`./themes/codemirror.css?raw`)).default;
   } else {
-    return (await import(`codemirror/theme/${theme}.css?raw`)).default;
+    return (await import(`./themes/${theme}.css?raw`)).default;
   }
 }
 
@@ -197,6 +199,56 @@ function getColor(style: StyleOption | undefined, options?: ParseOptions) {
   );
 }
 
+/**
+ * `@codemirror/legacy-modes` renamed some CodeMirror 5 token style names to
+ * CodeMirror 6 tag names (per mode). The rest of this library — the
+ * `StyleOption` union and the vendored theme CSS files — speaks CodeMirror 5
+ * class names, so the renames are translated back here. Each entry was
+ * verified against the corresponding `codemirror@5` mode source.
+ */
+const styleAliases: Record<string, StyleOption> = {
+  'string.special': 'string-2',
+  'variableName.special': 'variable-2',
+  'variableName.local': 'variable-2',
+  'variableName.constant': 'variable-3',
+};
+
+/**
+ * Runs a CodeMirror 5-style stream parser over the given text, mirroring the
+ * behavior of CodeMirror 5's `addon/runmode/runmode` (which CodeMirror 6
+ * no longer ships): the text is split into lines, the parser state is carried
+ * across lines, `\n` is reported between lines with no style, and each token
+ * is reported with its raw CodeMirror 5 style string.
+ */
+function runMode(
+  raw: string,
+  parser: StreamParser<unknown>,
+  callback: (text: string, style?: StyleOption) => void,
+) {
+  const lines = raw.split(/\r?\n|\r/);
+  const indentUnit = 2;
+  const state = parser.startState ? parser.startState(indentUnit) : true;
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) {
+      callback('\n');
+    }
+    const stream = new StringStream(lines[i], 8, indentUnit);
+    if (!stream.string && parser.blankLine) {
+      parser.blankLine(state, indentUnit);
+    }
+    while (!stream.eol()) {
+      const style = parser.token(stream, state);
+      const normalized =
+        typeof style === 'string' ? styleAliases[style] ?? style : null;
+      callback(
+        stream.current(),
+        (normalized as StyleOption | null) ?? undefined,
+      );
+      stream.start = stream.pos;
+    }
+  }
+}
+
 export function parse(code: CodeTree, options?: ParseOptions): Token[] {
   const raw = integrate(reindent(code));
   const parsed: Token[] = [];
@@ -206,7 +258,13 @@ export function parse(code: CodeTree, options?: ParseOptions): Token[] {
       `you must call \`await ready({ langs: ['${code.language}'] })\``,
     );
   }
-  CodeMirror.runMode(raw, mode.mime, (text: string, style?: StyleOption) => {
+  const parser = parsers.get(mode);
+  if (parser == null) {
+    throw new Error(
+      `you must call \`await ready({ langs: ['${code.language}'] })\``,
+    );
+  }
+  runMode(raw, parser, (text: string, style?: StyleOption) => {
     parsed.push({ code: text, color: getColor(style, options) });
   });
   return parsed;
